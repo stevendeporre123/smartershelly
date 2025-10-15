@@ -1,0 +1,22 @@
+# Node and npm
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Build artifacts
+dist/
+out/
+*.log
+
+# Electron
+*.asar
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.*

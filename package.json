@@ -1,0 +1,22 @@
+{
+  "name": "smartershelly",
+  "version": "0.1.0",
+  "description": "Lokale Electron-app voor het beheren van Shelly-apparaten met SQLite-opslag.",
+  "main": "src/main/main.js",
+  "author": "steve",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "lint": "echo \"No lint step configured\"",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.1.1",
+    "node-fetch": "^3.3.2",
+    "exceljs": "^4.3.0"
+  },
+  "devDependencies": {
+    "electron": "^28.2.0",
+    "electron-builder": "^24.6.0"
+  }
+}

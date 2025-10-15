@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SmartShelly Manager</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Poppins', 'ui-sans-serif', 'system-ui']
+            }
+          }
+        }
+      };
+    </script>
+    <script src="https://unpkg.com/feather-icons"></script>
+  </head>
+  <body class="bg-slate-100 text-slate-900 font-sans">
+    <nav class="bg-slate-900 text-white shadow">
+      <div class="flex h-14 w-full items-center justify-between px-8">
+        <div class="flex items-center gap-3">
+          <span class="text-lg font-semibold tracking-wide">SmartShelly Manager</span>
+        </div>
+        <div class="flex items-center gap-6 text-sm font-medium">
+          <a
+            href="#"
+            class="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-white shadow-sm transition hover:bg-white/20"
+          >
+            <span data-feather="users" class="h-4 w-4"></span>
+            Customers
+          </a>
+        </div>
+      </div>
+    </nav>
+    <main class="w-full px-8 py-8">
+      <section id="customers-view" class="rounded-xl bg-white shadow-md ring-1 ring-slate-100">
+        <div class="flex flex-col gap-4 border-b border-slate-200 p-6 md:flex-row md:items-center md:justify-between">
+          <div class="relative w-full md:max-w-sm">
+            <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
+              <span data-feather="search" class="h-4 w-4"></span>
+            </span>
+            <input
+              id="customer-search"
+              type="search"
+              placeholder="Search customers..."
+              class="w-full rounded-lg border border-slate-300 bg-white py-2 pl-10 pr-4 text-sm text-slate-700 shadow-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-300"
+            />
+          </div>
+          <button
+            id="new-customer-btn"
+            class="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+            type="button"
+          >
+            <span data-feather="plus-circle" class="h-4 w-4"></span>
+            New customer
+          </button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
+            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th scope="col" class="px-6 py-3" data-sort="name" data-label="Name">Name</th>
+                <th scope="col" class="px-6 py-3" data-sort="description" data-label="Description">Description</th>
+                <th scope="col" class="px-6 py-3" data-sort="contact" data-label="Contact">Contact</th>
+                <th scope="col" class="px-6 py-3" data-sort="subnet" data-label="Subnet">Subnet</th>
+                <th scope="col" class="px-6 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="customers-table-body" class="divide-y divide-slate-100 bg-white"></tbody>
+          </table>
+        </div>
+        <div id="customers-empty-state" class="hidden p-6 text-center text-sm text-slate-500">
+          No customers found.
+        </div>
+      </section>
+
+      <section id="customer-detail-view" class="mt-6 hidden">
+        <div class="rounded-xl bg-white shadow-md ring-1 ring-slate-100">
+          <div class="flex flex-col gap-4 border-b border-slate-200 p-6 md:flex-row md:items-center md:justify-between">
+            <div class="space-y-2">
+              <button
+                id="customer-back-btn"
+                class="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                type="button"
+              >
+                <span data-feather="arrow-left"></span>
+                Back to customers
+              </button>
+              <div>
+                <h2 id="customer-detail-title" class="text-2xl font-semibold text-slate-900"></h2>
+                <p id="customer-detail-subtitle" class="text-sm text-slate-500"></p>
+              </div>
+            </div>
+            <div class="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
+              <button
+                id="customer-scan-btn"
+                class="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+                type="button"
+              >
+                <span data-feather="play-circle"></span>
+                Start scan
+              </button>
+              <p id="customer-last-scan" class="text-xs text-slate-500 md:ml-3"></p>
+              <button
+                id="customer-edit-btn"
+                class="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300 focus:ring-offset-2"
+                type="button"
+              >
+                <span data-feather="edit-3"></span>
+                Edit
+              </button>
+            </div>
+          </div>
+          <div id="customer-detail-content" class="space-y-8 p-6">
+            <div id="customer-info-grid" class="grid grid-cols-1 gap-4 md:grid-cols-2"></div>
+            <section class="space-y-3">
+              <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <h3 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Devices</h3>
+                <div class="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
+                  <div class="relative w-full md:max-w-xs">
+                    <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
+                      <span data-feather="search" class="h-4 w-4"></span>
+                    </span>
+                    <input
+                      id="devices-search"
+                      type="search"
+                      placeholder="Search devices..."
+                      class="w-full rounded-lg border border-slate-300 bg-white py-2 pl-10 pr-4 text-sm text-slate-700 shadow-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-300"
+                    />
+                  </div>
+                  <button
+                    id="devices-export-btn"
+                    type="button"
+                    class="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300 focus:ring-offset-2"
+                  >
+                    <span data-feather="download" class="h-4 w-4"></span>
+                    Export
+                  </button>
+                </div>
+              </div>
+              <div id="customer-devices-section"></div>
+            </section>
+            <section class="space-y-3">
+              <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <h3 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Scan history</h3>
+                <div class="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
+                  <div class="relative w-full md:max-w-xs">
+                    <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
+                      <span data-feather="search" class="h-4 w-4"></span>
+                    </span>
+                    <input
+                      id="scans-search"
+                      type="search"
+                      placeholder="Search scans..."
+                      class="w-full rounded-lg border border-slate-300 bg-white py-2 pl-10 pr-4 text-sm text-slate-700 shadow-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-300"
+                    />
+                  </div>
+                  <button
+                    id="scans-export-btn"
+                    type="button"
+                    class="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300 focus:ring-offset-2"
+                  >
+                    <span data-feather="download" class="h-4 w-4"></span>
+                    Export
+                  </button>
+                </div>
+              </div>
+              <div id="customer-scans-section"></div>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div
+      id="modal-root"
+      class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm transition-opacity"
+      aria-hidden="true"
+    >
+      <div class="relative flex min-h-full items-center justify-center p-4">
+        <div
+          id="modal-panel"
+          class="w-full max-w-3xl transform overflow-hidden rounded-2xl bg-white shadow-2xl transition-all"
+        >
+          <div class="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+            <div>
+              <h2 id="modal-title" class="text-lg font-semibold text-slate-900"></h2>
+              <p id="modal-subtitle" class="text-sm text-slate-500"></p>
+            </div>
+            <button
+              id="modal-close"
+              class="text-slate-400 transition hover:text-slate-600"
+              type="button"
+              data-modal-close
+              aria-label="Close"
+            >
+              <span data-feather="x" class="h-5 w-5"></span>
+            </button>
+          </div>
+          <div id="modal-body" class="max-h-[70vh] overflow-y-auto px-6 py-4"></div>
+          <div
+            id="modal-footer"
+            class="flex flex-col gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4 text-right md:flex-row md:justify-end"
+          ></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast-root" class="pointer-events-none fixed bottom-6 right-6 z-[60] flex flex-col gap-3"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
