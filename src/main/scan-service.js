@@ -135,7 +135,8 @@ async function runScan({
       wifiSsid: payload.wifiSsid,
       hostname: payload.hostname,
       app: payload.app,
-      generation: payload.generation
+      generation: payload.generation,
+      rssi: payload.rssi ?? null
     });
     const diffNote = computeDiffDetails(diffStatus, previousSnapshot, {
       firmwareVersion: payload.firmwareVersion,
@@ -157,6 +158,7 @@ async function runScan({
       lastIp: payload.ip,
       firmwareVersion: payload.firmwareVersion,
       wifiSsid: payload.wifiSsid,
+      rssi: payload.rssi ?? null,
       installDate,
       uptime: payload.uptime ?? null,
       status: 'online',
@@ -180,6 +182,7 @@ async function runScan({
         model: payload.model,
         firmwareVersion: payload.firmwareVersion,
         wifiSsid: payload.wifiSsid,
+        rssi: payload.rssi ?? null,
         installDate,
         app: payload.app,
         generation: payload.generation,
@@ -196,6 +199,7 @@ async function runScan({
       targetDevice.model = payload.model;
       targetDevice.firmwareVersion = payload.firmwareVersion;
       targetDevice.wifiSsid = payload.wifiSsid;
+      targetDevice.rssi = payload.rssi ?? null;
       targetDevice.app = payload.app;
       targetDevice.generation = payload.generation;
       targetDevice.status = 'online';
@@ -225,6 +229,7 @@ async function runScan({
       model: payload.model,
       firmwareVersion: payload.firmwareVersion,
       wifiSsid: payload.wifiSsid,
+      rssi: payload.rssi ?? null,
       installDate,
       uptime: payload.uptime ?? null,
       app: payload.app,
@@ -239,7 +244,8 @@ async function runScan({
     setDeviceLastSnapshot({
       deviceId: deviceRecord.id,
       snapshotId,
-      status: 'online'
+      status: 'online',
+      rssi: payload.rssi ?? null
     });
 
     snapshotResults.push({
@@ -252,7 +258,8 @@ async function runScan({
       snapshotId,
       diffNote,
       app: payload.app,
-      generation: payload.generation
+      generation: payload.generation,
+      rssi: payload.rssi ?? null
     });
   }
 
@@ -270,6 +277,7 @@ async function runScan({
         model: device.model,
         firmwareVersion: device.firmwareVersion,
         wifiSsid: device.wifiSsid,
+        rssi: device.rssi ?? null,
         installDate: device.installDate || null,
         app: device.app,
         generation: device.generation,
@@ -283,7 +291,8 @@ async function runScan({
       setDeviceLastSnapshot({
         deviceId: device.id,
         snapshotId,
-        status: 'offline'
+        status: 'offline',
+        rssi: device.rssi ?? null
       });
       snapshotResults.push({
         deviceIdentifier: device.deviceIdentifier,
@@ -295,7 +304,8 @@ async function runScan({
         snapshotId,
         diffNote,
         app: device.app,
-        generation: device.generation
+        generation: device.generation,
+        rssi: device.rssi ?? null
       });
     }
   }
@@ -316,5 +326,4 @@ async function runScan({
 module.exports = {
   runScan
 };
-
 

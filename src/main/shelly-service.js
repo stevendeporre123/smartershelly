@@ -1,6 +1,34 @@
 ﻿const DEFAULT_TIMEOUT = 3500;
+const {
+  derivePowerStateFromStatus,
+  derivePowerStateFromSnapshot
+} = require('./power-utils');
 
 let fetchInstance = null;
+function normalizeRssiValue(value) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function resolveRssi(candidates) {
+  if (!Array.isArray(candidates)) {
+    return null;
+  }
+  for (const candidate of candidates) {
+    const normalized = normalizeRssiValue(candidate);
+    if (normalized !== null) {
+      return normalized;
+    }
+  }
+  return null;
+}
+
 
 async function getFetch() {
   if (!fetchInstance) {
@@ -102,6 +130,11 @@ function normaliseGen2Payload(ip, info, status) {
     hostname: info?.name || info?.sys?.device?.hostname || info?.sys?.device?.id,
     firmwareVersion: info?.ver || info?.fw_id,
     wifiSsid: status?.wifi?.ssid || status?.wifi?.sta?.ssid,
+    rssi: resolveRssi([
+      status?.wifi?.rssi,
+      status?.wifi?.sta?.rssi,
+      status?.wifi?.sta1?.rssi
+    ]),
     app: info?.app || info?.sys?.device?.type || null,
     generation:
       info?.gen !== undefined && info?.gen !== null
@@ -132,6 +165,12 @@ function normaliseGen1Payload(ip, info, status) {
     hostname: info?.hostname || info?.id,
     firmwareVersion: info?.fw || info?.fw_ver,
     wifiSsid: status?.wifi_sta?.ssid,
+    rssi: resolveRssi([
+      status?.wifi_sta?.rssi,
+      status?.wifi_sta?.connected?.rssi,
+      status?.wifi_sta1?.rssi,
+      status?.wifi?.rssi
+    ]),
     app: info?.type || info?.model || null,
     generation: '1',
     uptime:
@@ -189,13 +228,15 @@ async function triggerFirmwareUpdate(ip, options = {}) {
 
 async function updateWifiConfig(ip, options = {}) {
   const authHeaders = buildAuthHeaders(options.credentials);
-  const { ssid, password } = options;
+  const { ssid, password, network } = options;
   if (!ssid) {
     throw new Error('SSID is verplicht.');
   }
-  const payload = {
+  const targetNetwork = network === 'wifi2' ? 'sta1' : 'sta';
+  const rpcPayload = {
     config: {
-      sta: {
+      [targetNetwork]: {
+        enable: true,
         ssid,
         pass: password || ''
       }
@@ -206,22 +247,24 @@ async function updateWifiConfig(ip, options = {}) {
       method: 'POST',
       timeout: options.timeout,
       authHeaders,
-      body: JSON.stringify(payload)
+      body: JSON.stringify(rpcPayload)
     });
     return { success: true, response };
   } catch (rpcErr) {
     if (rpcErr.status && rpcErr.status !== 404) {
       throw rpcErr;
     }
+    const legacyKey = network === 'wifi2' ? 'wifi_sta1' : 'wifi_sta';
+    const legacyPath = network === 'wifi2' ? '/settings/sta1' : '/settings/sta';
     const legacyPayload = JSON.stringify({
-      wifi_sta: {
+      [legacyKey]: {
         enabled: true,
         ssid,
         pass: password || '',
         reconnect_timeout: 60
       }
     });
-    const response = await requestShelly(ip, '/settings/sta', {
+    const response = await requestShelly(ip, legacyPath, {
       method: 'POST',
       timeout: options.timeout,
       authHeaders,
@@ -362,12 +405,114 @@ async function updateDeviceSettings(ip, settings = {}, options = {}) {
   return { success: true };
 }
 
+async function toggleDevicePower(ip, options = {}) {
+  const authHeaders = buildAuthHeaders(options.credentials);
+  const timeout = options.timeout;
+  const channel =
+    typeof options.channel === 'number' && Number.isFinite(options.channel) ? options.channel : 0;
+  try {
+    const response = await requestShelly(ip, '/rpc/Switch.Toggle', {
+      method: 'POST',
+      timeout,
+      authHeaders,
+      body: JSON.stringify({ id: channel })
+    });
+    return { success: true, response };
+  } catch (rpcError) {
+    if (rpcError.status && rpcError.status !== 404) {
+      throw rpcError;
+    }
+    const fallbackPath = `/relay/${channel}?turn=toggle`;
+    const response = await requestShelly(ip, fallbackPath, {
+      method: 'GET',
+      timeout,
+      authHeaders
+    });
+    return { success: true, response };
+  }
+}
+
+async function fetchDevicePowerState(ip, options = {}) {
+  const authHeaders = buildAuthHeaders(options.credentials);
+  const timeout = options.timeout;
+  const channel =
+    typeof options.channel === 'number' && Number.isFinite(options.channel) ? options.channel : 0;
+
+  const attempts = [
+    async () => {
+      const response = await requestShelly(ip, '/rpc/Switch.GetStatus', {
+        method: 'POST',
+        timeout,
+        authHeaders,
+        body: JSON.stringify({ id: channel })
+      });
+      return {
+        state: derivePowerStateFromStatus(response),
+        origin: 'Switch.GetStatus'
+      };
+    },
+    async () => {
+      const response = await requestShelly(ip, '/rpc/Shelly.GetStatus', {
+        timeout,
+        authHeaders
+      });
+      return {
+        state: derivePowerStateFromSnapshot({ status: response }),
+        origin: 'Shelly.GetStatus'
+      };
+    },
+    async () => {
+      const response = await requestShelly(ip, '/status', {
+        timeout,
+        authHeaders
+      });
+      const stateFromStatus = derivePowerStateFromSnapshot({ status: response });
+      const state =
+        stateFromStatus !== null ? stateFromStatus : derivePowerStateFromSnapshot(response);
+      return {
+        state,
+        origin: 'legacyStatus'
+      };
+    }
+  ];
+
+  let lastError = null;
+  for (const attempt of attempts) {
+    try {
+      const result = await attempt();
+      if (result && result.state !== null) {
+        return { state: result.state, origin: result.origin };
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw error;
+      }
+      lastError = error;
+      const ignorableStatuses = [400, 401, 403, 404, 405, 422, 500, 501];
+      if (!error.status || !ignorableStatuses.includes(error.status)) {
+        throw error;
+      }
+    }
+  }
+
+  return {
+    state: null,
+    origin: 'unknown',
+    error: lastError ? lastError.message : null,
+    status: lastError?.status || null
+  };
+}
+
 module.exports = {
   detectShellyDevice,
   rebootDevice,
   triggerFirmwareUpdate,
   updateWifiConfig,
   getDeviceSettings,
-  updateDeviceSettings
+  updateDeviceSettings,
+  toggleDevicePower,
+  fetchDevicePowerState
 };
+
+
 

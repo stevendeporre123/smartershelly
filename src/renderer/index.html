@@ -32,6 +32,24 @@
           <span class="text-lg font-semibold tracking-wide">SmartShelly Manager</span>
         </div>
         <div class="flex items-center gap-6 text-sm font-medium">
+          <div class="flex items-center gap-3 text-xs text-white">
+            <button
+              id="auto-scan-toggle"
+              type="button"
+              class="relative inline-flex h-6 w-11 items-center rounded-full border border-white/30 bg-white/10 px-1 transition focus:outline-none focus:ring-2 focus:ring-white/60 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span class="sr-only">Toggle automatic device checks</span>
+              <span
+                data-indicator
+                class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ease-out"
+                style="transform: translateX(0);"
+              ></span>
+            </button>
+            <div class="flex flex-col leading-tight">
+              <span id="auto-scan-status" class="text-xs font-semibold text-white/90">Auto checks off</span>
+              <span id="auto-scan-meta" class="text-[10px] font-medium text-white/60"></span>
+            </div>
+          </div>
           <a
             href="#"
             class="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-white shadow-sm transition hover:bg-white/20"

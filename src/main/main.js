@@ -1,6 +1,7 @@
 const path = require('path');
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const { initDatabase } = require('./database');
+const createAutoScanService = require('./auto-scan-service');
 const {
   createCustomer,
   updateCustomer,
@@ -13,7 +14,9 @@ const {
   updateDeviceInstallDate,
   logAction,
   deleteDevice,
-  deleteScanRun
+  deleteScanRun,
+  getAutoScanPreferences,
+  updateAutoScanPreferences
 } = require('./data-store');
 const { runScan } = require('./scan-service');
 const {
@@ -21,12 +24,21 @@ const {
   triggerFirmwareUpdate,
   updateWifiConfig,
   getDeviceSettings,
-  updateDeviceSettings
+  updateDeviceSettings,
+  toggleDevicePower,
+  fetchDevicePowerState
 } = require('./shelly-service');
 const { getCurrentWifiSsid } = require('./wifi-info');
 const { exportDevicesToExcel, exportScanHistoryToExcel } = require('./export-service');
 
 let mainWindow;
+let autoScanService = null;
+
+function broadcastAutoScanStatus(status) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('autoScan:status', status);
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -48,12 +60,36 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (autoScanService) {
+      broadcastAutoScanStatus(autoScanService.getStatus());
+    }
+  });
 }
 
 app.on('ready', () => {
   const userDataPath = app.getPath('userData');
   const dbPath = path.join(userDataPath, 'smartershelly', 'smartershelly.db');
   initDatabase(dbPath);
+
+  autoScanService = createAutoScanService({
+    getPreferences: () => getAutoScanPreferences(),
+    savePreferences: (preferences) => updateAutoScanPreferences(preferences),
+    listCustomers: () => listCustomers(),
+    runScan: (options) => runScan(options)
+  });
+
+  autoScanService.on('status', (status) => {
+    broadcastAutoScanStatus(status);
+  });
+
+  autoScanService
+    .init()
+    .catch((error) => {
+      console.error('Failed to initialise auto scan service', error);
+    });
+
   createWindow();
 });
 
@@ -71,6 +107,31 @@ app.on('activate', () => {
 
 ipcMain.handle('customers:list', async () => {
   return listCustomers();
+});
+
+ipcMain.handle('autoScan:getStatus', async () => {
+  if (!autoScanService) {
+    return {
+      enabled: false,
+      intervalMs: 60000,
+      isRunning: false,
+      lastRunAt: null,
+      nextRunAt: null
+    };
+  }
+  return autoScanService.getStatus();
+});
+
+ipcMain.handle('autoScan:setEnabled', async (_event, enabled) => {
+  if (!autoScanService) {
+    throw new Error('Auto scan service is not initialised.');
+  }
+  try {
+    return await autoScanService.setEnabled(enabled);
+  } catch (error) {
+    console.error('Failed to change auto scan state', error);
+    throw error;
+  }
 });
 
 ipcMain.handle('customers:create', async (_event, payload) => {
@@ -115,6 +176,49 @@ ipcMain.handle('devices:list', async (_event, customerId) => {
     throw new Error('customerId is missing.');
   }
   return listDevicesForCustomer(customerId);
+});
+
+ipcMain.handle('devices:getPowerStates', async (_event, payload) => {
+  if (!Array.isArray(payload) || !payload.length) {
+    return [];
+  }
+  const requests = payload
+    .map((item) => ({
+      id: item?.id,
+      ip: item?.ip,
+      credentials: item?.credentials,
+      channel: item?.channel
+    }))
+    .filter((item) => item.id && item.ip);
+  if (!requests.length) {
+    return [];
+  }
+  const results = await Promise.allSettled(
+    requests.map((item) =>
+      fetchDevicePowerState(item.ip, {
+        credentials: item.credentials,
+        channel: item.channel
+      })
+    )
+  );
+  return results.map((result, index) => {
+    const request = requests[index];
+    if (result.status === 'fulfilled') {
+      return {
+        id: request.id,
+        state: result.value?.state ?? null,
+        error: result.value?.error || null,
+        status: result.value?.status || null
+      };
+    }
+    const reason = result.reason;
+    return {
+      id: request.id,
+      state: null,
+      error: reason?.message || null,
+      status: reason?.status || null
+    };
+  });
 });
 
 ipcMain.handle('devices:delete', async (_event, deviceId) => {
@@ -233,16 +337,33 @@ ipcMain.handle('device:firmware', async (_event, payload) => {
 });
 
 ipcMain.handle('device:wifi', async (_event, payload) => {
-  const { ip, ssid, password, credentials, metadata } = payload || {};
+  const { ip, ssid, password, credentials, metadata, network } = payload || {};
   if (!ip || !ssid) {
     throw new Error('IP en SSID zijn verplicht voor wifi-configuratie.');
   }
-  const result = await updateWifiConfig(ip, { ssid, password, credentials });
+  const result = await updateWifiConfig(ip, { ssid, password, credentials, network });
   if (metadata?.deviceId) {
     logAction({
       deviceId: metadata.deviceId,
       action: 'wifi',
-      payload: { ip, ssid },
+      payload: { ip, ssid, network: network || 'wifi1' },
+      result
+    });
+  }
+  return result;
+});
+
+ipcMain.handle('device:togglePower', async (_event, payload) => {
+  const { ip, credentials, metadata, channel } = payload || {};
+  if (!ip) {
+    throw new Error('IP is vereist om het vermogen te schakelen.');
+  }
+  const result = await toggleDevicePower(ip, { credentials, channel });
+  if (metadata?.deviceId) {
+    logAction({
+      deviceId: metadata.deviceId,
+      action: 'power-toggle',
+      payload: { ip, channel },
       result
     });
   }

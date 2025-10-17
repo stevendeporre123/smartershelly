@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('shellyManager', {
     delete: (deviceId) => invoke('devices:delete', deviceId),
     updateMetadata: (payload) => invoke('devices:updateMetadata', payload),
     fetchSettings: (payload) => invoke('devices:getSettings', payload),
+    getPowerStates: (payload) => invoke('devices:getPowerStates', payload),
     export: (customerId) => invoke('devices:export', customerId)
   },
   actions: {
@@ -29,10 +30,26 @@ contextBridge.exposeInMainWorld('shellyManager', {
     firmware: (payload) => invoke('device:firmware', payload),
     wifi: (payload) => invoke('device:wifi', payload),
     openWeb: (ip) => invoke('device:openWeb', ip),
-    deviceSettings: (payload) => invoke('devices:updateSettings', payload)
+    deviceSettings: (payload) => invoke('devices:updateSettings', payload),
+    togglePower: (payload) => invoke('device:togglePower', payload)
+  },
+  autoScan: {
+    getStatus: () => invoke('autoScan:getStatus'),
+    setEnabled: (enabled) => invoke('autoScan:setEnabled', enabled),
+    onStatusChanged: (callback) => {
+      if (typeof callback !== 'function') {
+        return () => {};
+      }
+      const listener = (_event, status) => {
+        callback(status);
+      };
+      ipcRenderer.on('autoScan:status', listener);
+      return () => {
+        ipcRenderer.removeListener('autoScan:status', listener);
+      };
+    }
   },
   system: {
     currentWifiSsid: () => invoke('system:currentWifiSsid')
   }
 });
-

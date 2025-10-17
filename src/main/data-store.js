@@ -1,4 +1,10 @@
 const { getDb } = require('./database');
+const { derivePowerStateFromSnapshot } = require('./power-utils');
+
+const DEFAULT_AUTO_SCAN_PREFERENCES = {
+  enabled: false,
+  intervalMs: 60000
+};
 
 function createCustomer({ name, description, subnet, contact, wifiSsid, wifiPassword }) {
   const db = getDb();
@@ -171,6 +177,7 @@ function upsertDevice(customerId, device) {
           last_ip = @lastIp,
           firmware_version = @firmwareVersion,
           wifi_ssid = @wifiSsid,
+          rssi = @rssi,
           install_date = @installDate,
           uptime = @uptime,
           status = @status,
@@ -188,6 +195,7 @@ function upsertDevice(customerId, device) {
       lastIp: device.lastIp || null,
       firmwareVersion: device.firmwareVersion || null,
       wifiSsid: device.wifiSsid || null,
+      rssi: device.rssi ?? null,
       installDate: Object.prototype.hasOwnProperty.call(device, 'installDate')
         ? device.installDate || null
         : existing.install_date || null,
@@ -210,12 +218,12 @@ function upsertDevice(customerId, device) {
   const insertStmt = db.prepare(`
     INSERT INTO devices (
       customer_id, device_identifier, model, hostname, mac, last_ip,
-      firmware_version, wifi_ssid, install_date, uptime, status, last_seen,
+      firmware_version, wifi_ssid, rssi, install_date, uptime, status, last_seen,
       last_snapshot_id, app, generation
     )
     VALUES (
       @customerId, @deviceIdentifier, @model, @hostname, @mac, @lastIp,
-      @firmwareVersion, @wifiSsid, @installDate, @uptime, @status, @lastSeen,
+      @firmwareVersion, @wifiSsid, @rssi, @installDate, @uptime, @status, @lastSeen,
       @lastSnapshotId, @app, @generation
     )
   `);
@@ -228,6 +236,7 @@ function upsertDevice(customerId, device) {
     lastIp: device.lastIp || null,
     firmwareVersion: device.firmwareVersion || null,
     wifiSsid: device.wifiSsid || null,
+    rssi: device.rssi ?? null,
     installDate: device.installDate || null,
     uptime: device.uptime ?? null,
     status: device.status || null,
@@ -257,6 +266,7 @@ function createDeviceSnapshot(snapshot) {
       model,
       firmware_version,
       wifi_ssid,
+      rssi,
       install_date,
       uptime,
       app,
@@ -275,6 +285,7 @@ function createDeviceSnapshot(snapshot) {
       @model,
       @firmwareVersion,
       @wifiSsid,
+      @rssi,
       @installDate,
       @uptime,
       @app,
@@ -294,6 +305,7 @@ function createDeviceSnapshot(snapshot) {
     model: snapshot.model || null,
     firmwareVersion: snapshot.firmwareVersion || null,
     wifiSsid: snapshot.wifiSsid || null,
+    rssi: snapshot.rssi ?? null,
     installDate: snapshot.installDate || null,
     uptime: snapshot.uptime ?? null,
     app: snapshot.app || null,
@@ -319,6 +331,7 @@ function listSnapshotsForScan(scanRunId) {
         model,
         firmware_version AS firmwareVersion,
         wifi_ssid AS wifiSsid,
+        rssi,
         uptime,
         app,
         generation,
@@ -337,7 +350,8 @@ function listSnapshotsForScan(scanRunId) {
       rawPayload: row.rawPayload ? JSON.parse(row.rawPayload) : null,
       uptime: row.uptime ?? null,
       app: row.app,
-      generation: row.generation
+      generation: row.generation,
+      rssi: row.rssi ?? null
     }));
 }
 
@@ -355,6 +369,7 @@ function getLatestSnapshotForDevice(deviceId) {
         model,
         firmware_version AS firmwareVersion,
         wifi_ssid AS wifiSsid,
+        rssi,
         uptime,
         app,
         generation,
@@ -413,6 +428,7 @@ function getPreviousSnapshotForDevice(customerId, deviceIdentifier, mac) {
     model: row.model,
     firmwareVersion: row.firmware_version,
     wifiSsid: row.wifi_ssid,
+    rssi: row.rssi ?? null,
     installDate: row.install_date || null,
     uptime: row.uptime ?? null,
     app: row.app,
@@ -436,6 +452,7 @@ function listDevicesForCustomer(customerId) {
         d.last_ip AS lastIp,
         d.firmware_version AS firmwareVersion,
         d.wifi_ssid AS wifiSsid,
+        d.rssi,
         d.install_date AS installDate,
         d.uptime,
         d.status,
@@ -455,17 +472,21 @@ function listDevicesForCustomer(customerId) {
     .all(customerId);
   return rows.map((row) => {
     let diffNote = null;
+    let rawSnapshot = null;
     if (row.rawPayload) {
       try {
-        const parsed = JSON.parse(row.rawPayload);
+        rawSnapshot = JSON.parse(row.rawPayload);
         diffNote =
-          typeof parsed === 'object' && parsed !== null
-            ? parsed.diffNote || parsed.note || null
+          typeof rawSnapshot === 'object' && rawSnapshot !== null
+            ? rawSnapshot.diffNote || rawSnapshot.note || null
             : null;
       } catch (error) {
+        rawSnapshot = null;
         diffNote = null;
       }
     }
+    const computedPowerState = derivePowerStateFromSnapshot(rawSnapshot);
+    const isOnline = row.diffStatus !== 'offline';
     return {
       id: row.id,
       deviceIdentifier: row.deviceIdentifier,
@@ -483,7 +504,9 @@ function listDevicesForCustomer(customerId) {
       app: row.app || null,
       generation: row.generation || null,
       diffStatus: row.diffStatus,
-      isOnline: row.diffStatus !== 'offline',
+      isOnline,
+      powerState: isOnline ? computedPowerState : null,
+      rssi: typeof row.rssi === 'number' ? row.rssi : null,
       diffNote,
       snapshotCreatedAt: row.snapshotCreatedAt
     };
@@ -531,18 +554,20 @@ function logAction({ deviceId, action, payload, result }) {
   });
 }
 
-function setDeviceLastSnapshot({ deviceId, snapshotId, status }) {
+function setDeviceLastSnapshot({ deviceId, snapshotId, status, rssi }) {
   const db = getDb();
   const stmt = db.prepare(`
     UPDATE devices
     SET last_snapshot_id = @snapshotId,
-        status = CASE WHEN @status IS NULL THEN status ELSE @status END
+        status = CASE WHEN @status IS NULL THEN status ELSE @status END,
+        rssi = @rssi
     WHERE id = @deviceId
   `);
   stmt.run({
     deviceId,
     snapshotId,
-    status: status || null
+    status: status || null,
+    rssi: typeof rssi === 'undefined' ? null : rssi
   });
 }
 
@@ -589,8 +614,7 @@ function deleteScanRun(scanRunId) {
     const latest = db
       .prepare(
         `
-        SELECT id, is_online AS isOnline
-        FROM device_snapshots
+        SELECT id, is_online AS isOnline, rssi FROM device_snapshots
         WHERE device_id = ?
         ORDER BY created_at DESC
         LIMIT 1
@@ -601,19 +625,80 @@ function deleteScanRun(scanRunId) {
       setDeviceLastSnapshot({
         deviceId,
         snapshotId: latest.id,
-        status: latest.isOnline ? 'online' : 'offline'
+        status: latest.isOnline ? 'online' : 'offline',
+        rssi: typeof latest.rssi === 'number' ? latest.rssi : null
       });
     } else {
       db.prepare(
         `
         UPDATE devices
         SET last_snapshot_id = NULL,
-            status = NULL
+            status = NULL,
+            rssi = NULL
         WHERE id = ?
       `
       ).run(deviceId);
     }
   });
+}
+
+function getAppSetting(key) {
+  if (!key) {
+    throw new Error('Setting key is required.');
+  }
+  const row = getDb()
+    .prepare('SELECT value FROM app_settings WHERE key = ?')
+    .get(key);
+  return row ? row.value : null;
+}
+
+function setAppSetting(key, value) {
+  if (!key) {
+    throw new Error('Setting key is required.');
+  }
+  getDb()
+    .prepare(
+      `
+      INSERT INTO app_settings (key, value)
+      VALUES (@key, @value)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = CURRENT_TIMESTAMP
+    `
+    )
+    .run({ key, value });
+}
+
+function getAutoScanPreferences() {
+  const raw = getAppSetting('autoScanPreferences');
+  if (!raw) {
+    return { ...DEFAULT_AUTO_SCAN_PREFERENCES };
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    const enabled = Boolean(parsed.enabled);
+    const intervalMs =
+      typeof parsed.intervalMs === 'number' && parsed.intervalMs > 0
+        ? parsed.intervalMs
+        : DEFAULT_AUTO_SCAN_PREFERENCES.intervalMs;
+    return { enabled, intervalMs };
+  } catch (error) {
+    return { ...DEFAULT_AUTO_SCAN_PREFERENCES };
+  }
+}
+
+function updateAutoScanPreferences(preferences = {}) {
+  const current = getAutoScanPreferences();
+  const merged = {
+    ...current,
+    ...preferences
+  };
+  if (typeof merged.intervalMs !== 'number' || merged.intervalMs <= 0) {
+    merged.intervalMs = DEFAULT_AUTO_SCAN_PREFERENCES.intervalMs;
+  }
+  merged.enabled = Boolean(merged.enabled);
+  setAppSetting('autoScanPreferences', JSON.stringify(merged));
+  return merged;
 }
 
 module.exports = {
@@ -637,8 +722,16 @@ module.exports = {
   setDeviceLastSnapshot,
   updateDeviceInstallDate,
   deleteDevice,
-  deleteScanRun
+  deleteScanRun,
+  getAutoScanPreferences,
+  updateAutoScanPreferences
 };
+
+
+
+
+
+
 
 
 

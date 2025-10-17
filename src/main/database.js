@@ -215,6 +215,35 @@ function runMigrations(db) {
           database.exec('ALTER TABLE device_snapshots ADD COLUMN install_date TEXT');
         }
       }
+    },
+    {
+      name: '011_create_app_settings',
+      sql: `
+        CREATE TABLE IF NOT EXISTS app_settings (
+          key TEXT PRIMARY KEY,
+          value TEXT,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+      `
+    },
+    {
+      name: '012_add_rssi_columns',
+      run: (database) => {
+        const deviceColumns = database
+          .prepare('PRAGMA table_info(devices)')
+          .all()
+          .map((column) => column.name);
+        if (!deviceColumns.includes('rssi')) {
+          database.exec('ALTER TABLE devices ADD COLUMN rssi INTEGER');
+        }
+        const snapshotColumns = database
+          .prepare('PRAGMA table_info(device_snapshots)')
+          .all()
+          .map((column) => column.name);
+        if (!snapshotColumns.includes('rssi')) {
+          database.exec('ALTER TABLE device_snapshots ADD COLUMN rssi INTEGER');
+        }
+      }
     }
   ];
 

@@ -1,12 +1,15 @@
 {
   "name": "smartershelly",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Lokale Electron-app voor het beheren van Shelly-apparaten met SQLite-opslag.",
   "main": "src/main/main.js",
-  "author": "steve",
+  "author": "smarterhomes",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
+    "build:win": "electron-builder --win --x64",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
     "lint": "echo \"No lint step configured\"",
     "postinstall": "electron-builder install-app-deps"
   },
@@ -18,5 +21,28 @@
   "devDependencies": {
     "electron": "^28.2.0",
     "electron-builder": "^24.6.0"
+  },
+  "build": {
+    "appId": "com.smarterhomes.smartershelly",
+    "productName": "SmartShelly Manager",
+    "files": [
+      "src/**",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "build"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "mac": {
+      "category": "public.app-category.utilities",
+      "icon": "build/icon.icns"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "build"
+    }
   }
 }
